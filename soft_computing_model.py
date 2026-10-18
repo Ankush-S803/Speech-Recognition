@@ -10,8 +10,8 @@ This file contains ALL soft-computing logic:
   • Training pipeline with cross-entropy loss and Adam optimiser
   • Real-time inference wrapper used by the Flask backend
 
-The model classifies 6 voice commands:
-    "left", "right", "up", "down", "yes", "no"
+The model classifies 4 voice commands:
+    "left", "right", "up", "down"
 
 References:
   - Baseline architecture adapted from: mabdulam/speech-keyword-spotting
@@ -54,7 +54,7 @@ logger = logging.getLogger(__name__)
 # SECTION 1 — CONFIGURATION
 # =============================================================================
 
-COMMANDS          = ["left", "right", "up", "down", "yes", "no"]
+COMMANDS          = ["left", "right", "up", "down"]
 NUM_CLASSES       = len(COMMANDS)
 SAMPLE_RATE       = 16_000          # Hz
 DURATION          = 1.0             # seconds
@@ -476,7 +476,7 @@ def train_model(train_samples: list,
                 "val_acc":     val_acc,
                 "label_map":   IDX_TO_LABEL,
             }, save_path)
-            logger.info(f"  ✓ Saved best model (val_acc={val_acc:.4f})")
+            logger.info(f"  [OK] Saved best model (val_acc={val_acc:.4f})")
         else:
             patience_ctr += 1
             if patience_ctr >= PATIENCE:
@@ -646,4 +646,4 @@ if __name__ == "__main__":
     # Parameter count
     total = sum(p.numel() for p in cnn.parameters())
     print(f"Parameters  : {total:,}")
-    print("\n✓ All checks passed.")
+    print("\n[OK] All checks passed.")

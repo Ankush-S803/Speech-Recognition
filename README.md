@@ -78,9 +78,9 @@ Input: (batch, 1, 40, T)   ← single-channel MFCC spectrogram
 [MLP Head]
   FC(128→256) → ReLU → Dropout(0.4)
   FC(256→128) → ReLU → Dropout(0.3)
-  FC(128→6)                           ← 6 commands
+  FC(128→4)                           ← 4 commands (left, right, up, down)
 
-Output: (batch, 6)   ← raw logits
+Output: (batch, 4)   ← raw logits
 ```
 
 ### MFCC Pipeline

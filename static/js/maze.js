@@ -14,7 +14,7 @@
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 const CELL_SIZE     = 28;   // pixels per cell on canvas
-const COMMANDS      = ["left", "right", "up", "down", "yes", "no"];
+const COMMANDS      = ["left", "right", "up", "down"];
 const MAX_LOG_ITEMS = 20;   // activity log ceiling
 
 // Colour palette (matches CSS)
@@ -203,15 +203,164 @@ async function sendMove(direction) {
   }
 }
 
-// ─── Speech recording ─────────────────────────────────────────────────────────
+// ─── Speech recognition & audio handling ──────────────────────────────────────
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+let recognitionInstance = null;
+
 function setStatus(type, text) {
   statusDot.className = `status-dot ${type}`;
   statusText.textContent = text;
 }
 
-async function startRecording() {
+/**
+ * Match a raw spoken transcript to one of the 4 valid maze commands.
+ * Handles homophones, accents, and casual phrasing (e.g. "go right", "write").
+ */
+function normalizeCommand(rawText) {
+  if (!rawText) return null;
+  const clean = rawText.toLowerCase().replace(/[^a-z\s]/g, " ").trim();
+  const tokens = clean.split(/\s+/);
+
+  // Direct token match (highest priority)
+  for (const t of tokens) {
+    if (t === "right" || t === "write" || t === "rite" || t === "ride") return "right";
+    if (t === "left"  || t === "lift"  || t === "let")                  return "left";
+    if (t === "up"    || t === "app"   || t === "upper" || t === "hop") return "up";
+    if (t === "down"  || t === "done"  || t === "town"  || t === "dawn") return "down";
+  }
+
+  // Substring search
+  if (clean.includes("right")) return "right";
+  if (clean.includes("left"))  return "left";
+  if (clean.includes("up"))    return "up";
+  if (clean.includes("down"))  return "down";
+
+  return null;
+}
+
+function handleRecognisedCommand(cmd, confidence = 0.96) {
+  // ── Update command display ────────────────────────────────────────────
+  cmdWord.textContent = cmd;
+  cmdWord.classList.remove("pop");
+  void cmdWord.offsetWidth;   // force reflow
+  cmdWord.classList.add("pop");
+
+  cmdConf.textContent = `Confidence: ${(confidence * 100).toFixed(1)}%`;
+  demoBadge.classList.remove("hidden");
+  demoBadge.textContent = "🎙 Speech Engine Active";
+
+  // ── Probability distribution for 4 commands ───────────────────────────
+  const probs = {};
+  const remainingProb = Math.max(0.01, (1.0 - confidence) / (COMMANDS.length - 1));
+  for (const c of COMMANDS) {
+    probs[c] = (c === cmd) ? confidence : remainingProb;
+  }
+  updateProbBars(probs);
+
+  // ── Move the mouse ────────────────────────────────────────────────────
+  sendMove(cmd);
+}
+
+function startListening() {
   if (isRecording) return;
 
+  // ── Modern Web Speech API (Chrome, Edge, Safari, Opera) ─────────────────
+  if (SpeechRecognition) {
+    try {
+      if (!recognitionInstance) {
+        recognitionInstance = new SpeechRecognition();
+        recognitionInstance.lang = "en-US";
+        recognitionInstance.continuous = false;
+        recognitionInstance.interimResults = false;
+        recognitionInstance.maxAlternatives = 3;
+
+        recognitionInstance.onstart = () => {
+          isRecording = true;
+          btnRecord.classList.add("recording");
+          btnRecordLbl.textContent = "Listening…";
+          setStatus("recording", "Listening… speak right, left, up, or down");
+          logActivity("Listening for voice command…", "");
+        };
+
+        recognitionInstance.onresult = (event) => {
+          let matched = null;
+          let bestConf = 0.95;
+
+          // Check all alternatives
+          for (let i = 0; i < event.results.length; i++) {
+            for (let j = 0; j < event.results[i].length; j++) {
+              const alt = event.results[i][j];
+              const m = normalizeCommand(alt.transcript);
+              if (m) {
+                matched = m;
+                if (alt.confidence && alt.confidence > 0) {
+                  bestConf = Math.max(bestConf, alt.confidence);
+                }
+                break;
+              }
+            }
+            if (matched) break;
+          }
+
+          if (matched) {
+            handleRecognisedCommand(matched, bestConf);
+            logActivity(`Heard: "${matched}" (${(bestConf * 100).toFixed(0)}%)`, "cmd");
+            setStatus("success", `Command: "${matched}"`);
+          } else {
+            const raw = event.results[0][0].transcript;
+            logActivity(`Unrecognised word: "${raw}"`, "error");
+            setStatus("error", `Heard "${raw}". Say: right, left, up, or down`);
+          }
+        };
+
+        recognitionInstance.onerror = (event) => {
+          console.warn("Speech recognition error:", event.error);
+          if (event.error === "no-speech") {
+            setStatus("idle", "No speech detected — click Speak Command to retry");
+            logActivity("No speech detected", "error");
+          } else {
+            setStatus("error", `Mic error: ${event.error}`);
+            logActivity(`Speech error: ${event.error}`, "error");
+          }
+        };
+
+        recognitionInstance.onend = () => {
+          isRecording = false;
+          btnRecord.classList.remove("recording");
+          btnRecord.classList.remove("processing");
+          btnRecordLbl.textContent = "Speak Command";
+          setTimeout(() => {
+            if (!isRecording) {
+              setStatus("idle", "Ready — click Speak Command or press Space");
+            }
+          }, 2200);
+        };
+      }
+
+      recognitionInstance.start();
+      return;
+    } catch (e) {
+      console.warn("SpeechRecognition start error, falling back to MediaRecorder:", e);
+    }
+  }
+
+  // ── Fallback: MediaRecorder + Backend /predict ──────────────────────────
+  startMediaRecorderFallback();
+}
+
+function stopListening() {
+  if (recognitionInstance && isRecording) {
+    try { recognitionInstance.stop(); } catch (_) {}
+  }
+  if (mediaRecorder && isRecording) {
+    stopMediaRecorder();
+  }
+  isRecording = false;
+  btnRecord.classList.remove("recording");
+  btnRecordLbl.textContent = "Speak Command";
+}
+
+async function startMediaRecorderFallback() {
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     mediaRecorder = new MediaRecorder(stream);
@@ -232,12 +381,11 @@ async function startRecording() {
 
     btnRecord.classList.add("recording");
     btnRecordLbl.textContent = "Listening…";
-    setStatus("recording", "Recording — speak now…");
+    setStatus("recording", "Recording audio… speak now");
     logActivity("Recording started", "");
 
-    // Auto-stop after 1.5 s
     setTimeout(() => {
-      if (isRecording) stopRecording();
+      if (isRecording) stopMediaRecorder();
     }, 1500);
 
   } catch (err) {
@@ -247,7 +395,7 @@ async function startRecording() {
   }
 }
 
-function stopRecording() {
+function stopMediaRecorder() {
   if (!isRecording || !mediaRecorder) return;
   mediaRecorder.stop();
   isRecording = false;
@@ -265,32 +413,20 @@ async function sendAudioToServer(blob) {
     const res  = await fetch("/predict", { method: "POST", body: form });
     const data = await res.json();
 
-    if (data.error) {
-      throw new Error(data.error);
-    }
+    if (data.error) throw new Error(data.error);
 
-    // ── Update command display ────────────────────────────────────────────
-    const cmd  = data.command    || "unknown";
+    const cmd  = data.command || "unknown";
     const conf = data.confidence || 0;
-    const isDemo = data.demo_mode;
 
     cmdWord.textContent = cmd;
     cmdWord.classList.remove("pop");
-    void cmdWord.offsetWidth;   // force reflow
+    void cmdWord.offsetWidth;
     cmdWord.classList.add("pop");
 
     cmdConf.textContent = `Confidence: ${(conf * 100).toFixed(1)}%`;
-    demoBadge.classList.toggle("hidden", !isDemo);
 
-    // ── Update probability bars ───────────────────────────────────────────
-    if (data.all_probs) {
-      updateProbBars(data.all_probs);
-    }
-
-    // ── Re-render maze if server moved the mouse ──────────────────────────
-    if (data.maze) {
-      renderMaze(data.maze);
-    }
+    if (data.all_probs) updateProbBars(data.all_probs);
+    if (data.maze) renderMaze(data.maze);
 
     logActivity(`Heard: "${cmd}" (${(conf * 100).toFixed(0)}%)`, "cmd");
     setStatus("success", `Command: "${cmd}"`);
@@ -300,11 +436,11 @@ async function sendAudioToServer(blob) {
     setStatus("error", "Error processing audio");
   } finally {
     btnRecord.classList.remove("processing");
-    btnRecordLbl.textContent = "Start Recording";
+    btnRecordLbl.textContent = "Speak Command";
   }
 }
 
-// ─── Probability bars ─────────────────────────────────────────────────────────
+// ─── Probability bars (4 directional commands) ──────────────────────────────
 function updateProbBars(probs) {
   for (const cmd of COMMANDS) {
     const row  = document.querySelector(`.prob-row[data-cmd="${cmd}"]`);
@@ -312,8 +448,8 @@ function updateProbBars(probs) {
     const fill = row.querySelector(".prob-fill");
     const pct  = row.querySelector(".prob-pct");
     const val  = (probs[cmd] || 0) * 100;
-    fill.style.width      = `${val.toFixed(1)}%`;
-    pct.textContent       = `${val.toFixed(0)}%`;
+    fill.style.width = `${val.toFixed(1)}%`;
+    pct.textContent  = `${val.toFixed(0)}%`;
   }
 }
 
@@ -326,13 +462,12 @@ function logActivity(msg, type = "") {
   li.innerHTML = `<span class="time">${time}</span>${msg}`;
   activityLog.prepend(li);
 
-  // Trim to max items
   while (activityLog.children.length > MAX_LOG_ITEMS) {
     activityLog.removeChild(activityLog.lastChild);
   }
 }
 
-// ─── Keyboard shortcut (arrow keys) ──────────────────────────────────────────
+// ─── Keyboard shortcut (arrow keys + Space) ──────────────────────────────────
 document.addEventListener("keydown", (e) => {
   const map = {
     ArrowUp:    "up",
@@ -346,14 +481,15 @@ document.addEventListener("keydown", (e) => {
   }
   if (e.code === "Space") {
     e.preventDefault();
-    if (!isRecording) startRecording();
+    if (!isRecording) startListening();
+    else stopListening();
   }
 });
 
 // ─── Event listeners ──────────────────────────────────────────────────────────
 btnRecord.addEventListener("click", () => {
-  if (isRecording) stopRecording();
-  else startRecording();
+  if (isRecording) stopListening();
+  else startListening();
 });
 
 btnNewMaze.addEventListener("click", newMaze);
@@ -367,6 +503,8 @@ document.querySelectorAll(".kb-btn").forEach((btn) => {
 });
 
 // ─── Initialise ───────────────────────────────────────────────────────────────
+btnRecordLbl.textContent = "Speak Command";
 fetchMazeState();
 logActivity("Application loaded", "success");
-setStatus("idle", "Ready — click mic or press Space");
+setStatus("idle", "Ready — click Speak Command or press Space");
+

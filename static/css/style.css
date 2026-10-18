@@ -130,14 +130,14 @@ a:hover { text-decoration: underline; }
 .pill-mfcc   { color: #06b6d4; border-color: rgba(6,182,212,0.4);   background: rgba(6,182,212,0.08); }
 .pill-pt     { color: #f59e0b; border-color: rgba(245,158,11,0.4);  background: rgba(245,158,11,0.08); }
 
-/* ─── Main three-column layout ──────────────────────────────────────────── */
+/* ─── Main two-column layout ──────────────────────────────────────────── */
 .layout {
   position: relative; z-index: 1;
   display: grid;
-  grid-template-columns: 300px 1fr 280px;
+  grid-template-columns: 340px 1fr;
   grid-template-rows: 1fr;
-  gap: 1.25rem;
-  max-width: 1440px;
+  gap: 1.5rem;
+  max-width: 1240px;
   margin: 1.25rem auto;
   padding: 0 1.25rem;
   min-height: calc(100vh - 130px);
@@ -426,19 +426,15 @@ a:hover { text-decoration: underline; }
 .footer .sep { opacity: 0.3; }
 
 /* ─── Responsive ─────────────────────────────────────────────────────────── */
-@media (max-width: 1100px) {
-  .layout {
-    grid-template-columns: 1fr 1fr;
-    grid-template-rows: auto auto;
-  }
-  .panel-center { grid-column: 1 / -1; order: -1; }
-  .panel-left   { grid-column: 1; }
-  .panel-right  { grid-column: 2; }
-}
-@media (max-width: 700px) {
+@media (max-width: 860px) {
   .layout {
     grid-template-columns: 1fr;
+    grid-template-rows: auto auto;
+    gap: 1.25rem;
   }
-  .panel-center, .panel-left, .panel-right { grid-column: 1; }
-  .panel-center { min-height: 360px; }
+  .panel-center {
+    order: -1;
+    min-height: 400px;
+  }
 }
+

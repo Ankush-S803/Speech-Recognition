@@ -26,18 +26,13 @@
       <span class="logo-icon">🎙️</span>
       <span class="logo-text">VoiceMaze</span>
     </div>
-    <nav class="nav-pills">
-      <span class="pill pill-model">CNN Model</span>
-      <span class="pill pill-mfcc">MFCC Features</span>
-      <span class="pill pill-pt">PyTorch</span>
-    </nav>
   </div>
 </header>
 
 <!-- ─── Main layout ─── -->
 <main class="layout">
 
-  <!-- ══════ LEFT PANEL — Controls ══════ -->
+  <!-- ══════ LEFT PANEL — Controls & Activity ══════ -->
   <aside class="panel panel-left glass" role="complementary" aria-label="Controls">
 
     <section class="section-title">
@@ -47,7 +42,7 @@
 
     <!-- Recording button -->
     <div class="record-wrap">
-      <button id="btn-record" class="btn-record" aria-label="Start Recording">
+      <button id="btn-record" class="btn-record" aria-label="Speak Command">
         <span class="mic-ring" aria-hidden="true"></span>
         <svg class="mic-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
@@ -55,13 +50,13 @@
           <line x1="12" y1="19" x2="12" y2="23"/>
           <line x1="8" y1="23" x2="16" y2="23"/>
         </svg>
-        <span id="btn-record-label">Start Recording</span>
+        <span id="btn-record-label">Speak Command</span>
       </button>
 
       <!-- Status indicator -->
       <div id="status-bar" class="status-bar" role="status" aria-live="polite">
         <span id="status-dot" class="status-dot idle"></span>
-        <span id="status-text">Ready — click to speak</span>
+        <span id="status-text">Ready — click Speak Command</span>
       </div>
     </div>
 
@@ -70,10 +65,10 @@
       <div class="cmd-label">Last command</div>
       <div id="cmd-word" class="cmd-word">—</div>
       <div id="cmd-conf" class="cmd-conf">Confidence: —</div>
-      <div id="demo-badge" class="demo-badge hidden">⚠ Demo mode (no trained model)</div>
+      <div id="demo-badge" class="demo-badge hidden">Speech Engine Active</div>
     </div>
 
-    <!-- Probability bars -->
+    <!-- Probability bars (4 commands) -->
     <div class="prob-section">
       <div class="prob-title">Command probabilities</div>
       <div id="prob-bars" class="prob-bars">
@@ -97,22 +92,18 @@
           <div class="prob-track"><div class="prob-fill" style="width:0%"></div></div>
           <span class="prob-pct">0%</span>
         </div>
-        <div class="prob-row" data-cmd="yes">
-          <span class="prob-label">yes</span>
-          <div class="prob-track"><div class="prob-fill" style="width:0%"></div></div>
-          <span class="prob-pct">0%</span>
-        </div>
-        <div class="prob-row" data-cmd="no">
-          <span class="prob-label">no</span>
-          <div class="prob-track"><div class="prob-fill" style="width:0%"></div></div>
-          <span class="prob-pct">0%</span>
-        </div>
       </div>
+    </div>
+
+    <!-- Activity log (Moved above keyboard) -->
+    <div class="log-section glass-inner">
+      <div class="log-title">📋 Activity Log</div>
+      <ul id="activity-log" class="activity-log" aria-live="polite"></ul>
     </div>
 
     <!-- Keyboard fallback -->
     <div class="keyboard-section glass-inner">
-      <div class="kb-label">⌨ Keyboard fallback</div>
+      <div class="kb-label">⌨ Keyboard fallback (Arrow Keys)</div>
       <div class="d-pad">
         <button id="kb-up"    class="kb-btn"             aria-label="Move up"    data-dir="up">▲</button>
         <button id="kb-left"  class="kb-btn kb-left"     aria-label="Move left"  data-dir="left">◀</button>
@@ -168,71 +159,6 @@
       </div>
     </div>
   </section>
-
-  <!-- ══════ RIGHT PANEL — Info ══════ -->
-  <aside class="panel panel-right glass" role="complementary" aria-label="Model information">
-
-    <section class="section-title">
-      <h2>🧠 Model Info</h2>
-    </section>
-
-    <div class="model-card glass-inner">
-      <div class="model-row">
-        <span class="model-key">Architecture</span>
-        <span class="model-val">CNN + MLP head</span>
-      </div>
-      <div class="model-row">
-        <span class="model-key">Features</span>
-        <span class="model-val">40 MFCCs</span>
-      </div>
-      <div class="model-row">
-        <span class="model-key">Sample Rate</span>
-        <span class="model-val">16 000 Hz</span>
-      </div>
-      <div class="model-row">
-        <span class="model-key">Classes</span>
-        <span class="model-val">6 commands</span>
-      </div>
-      <div class="model-row">
-        <span class="model-key">Loss</span>
-        <span class="model-val">Cross-Entropy</span>
-      </div>
-      <div class="model-row">
-        <span class="model-key">Optimiser</span>
-        <span class="model-val">Adam</span>
-      </div>
-    </div>
-
-    <div class="command-grid-section">
-      <div class="cg-title">Supported commands</div>
-      <div class="command-grid">
-        <span class="cmd-chip nav">⬅ left</span>
-        <span class="cmd-chip nav">➡ right</span>
-        <span class="cmd-chip nav">⬆ up</span>
-        <span class="cmd-chip nav">⬇ down</span>
-        <span class="cmd-chip confirm">✅ yes</span>
-        <span class="cmd-chip deny">❌ no</span>
-      </div>
-    </div>
-
-    <div class="pipeline-section">
-      <div class="pipe-title">Processing pipeline</div>
-      <ol class="pipe-steps">
-        <li><span class="pipe-num">1</span>Mic captures audio (1.5 s)</li>
-        <li><span class="pipe-num">2</span>Pre-emphasis + STFT</li>
-        <li><span class="pipe-num">3</span>Mel filterbank → log energy</li>
-        <li><span class="pipe-num">4</span>DCT → 40 MFCC coefficients</li>
-        <li><span class="pipe-num">5</span>CNN → 128-d feature vector</li>
-        <li><span class="pipe-num">6</span>Softmax → command label</li>
-      </ol>
-    </div>
-
-    <div class="log-section glass-inner">
-      <div class="log-title">Activity log</div>
-      <ul id="activity-log" class="activity-log" aria-live="polite"></ul>
-    </div>
-
-  </aside>
 
 </main>
 
