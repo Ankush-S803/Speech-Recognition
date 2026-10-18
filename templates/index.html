@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>VoiceMaze — Speech-Controlled Maze Navigation</title>
-  <meta name="description" content="Navigate a randomised maze using voice commands powered by a PyTorch CNN speech recognition model." />
+  <meta name="description" content="Navigate a randomised maze using voice commands powered by speech recognition." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
@@ -26,18 +26,19 @@
       <span class="logo-icon">🎙️</span>
       <span class="logo-text">VoiceMaze</span>
     </div>
+    <span class="header-tagline">Speech-Controlled Maze Navigation</span>
   </div>
 </header>
 
 <!-- ─── Main layout ─── -->
 <main class="layout">
 
-  <!-- ══════ LEFT PANEL — Controls & Activity ══════ -->
+  <!-- ══════ LEFT PANEL — Controls ══════ -->
   <aside class="panel panel-left glass" role="complementary" aria-label="Controls">
 
     <section class="section-title">
       <h2>🎮 Controls</h2>
-      <p class="subtitle">Speak a command below to move the mouse</p>
+      <p class="subtitle">Speak a command to move the mouse</p>
     </section>
 
     <!-- Recording button -->
@@ -59,7 +60,7 @@
         <span id="status-text">Ready — click Speak Command</span>
       </div>
 
-      <!-- Fast Continuous Listening Mode Toggle -->
+      <!-- Continuous mode toggle -->
       <label class="continuous-toggle" title="Keep mic listening continuously for ultra-fast repeated voice moves">
         <input type="checkbox" id="chk-continuous" />
         <span class="toggle-slider"></span>
@@ -75,7 +76,7 @@
       <div id="demo-badge" class="demo-badge hidden">Speech Engine Active</div>
     </div>
 
-    <!-- Probability bars (4 commands) -->
+    <!-- Probability bars (4 commands only) -->
     <div class="prob-section">
       <div class="prob-title">Command probabilities</div>
       <div id="prob-bars" class="prob-bars">
@@ -102,15 +103,9 @@
       </div>
     </div>
 
-    <!-- Activity log (Moved above keyboard) -->
-    <div class="log-section glass-inner">
-      <div class="log-title">📋 Activity Log</div>
-      <ul id="activity-log" class="activity-log" aria-live="polite"></ul>
-    </div>
-
     <!-- Keyboard fallback -->
     <div class="keyboard-section glass-inner">
-      <div class="kb-label">⌨ Keyboard fallback (Arrow Keys)</div>
+      <div class="kb-label">⌨ Keyboard (Arrow Keys)</div>
       <div class="d-pad">
         <button id="kb-up"    class="kb-btn"             aria-label="Move up"    data-dir="up">▲</button>
         <button id="kb-left"  class="kb-btn kb-left"     aria-label="Move left"  data-dir="left">◀</button>
@@ -176,6 +171,41 @@
       </div>
     </div>
   </section>
+
+  <!-- ══════ RIGHT PANEL — Activity Log & Pipeline ══════ -->
+  <aside class="panel panel-right glass" role="complementary" aria-label="Activity Log">
+
+    <!-- Activity Log (top of right panel) -->
+    <div class="log-section glass-inner">
+      <div class="log-title">📋 Activity Log</div>
+      <ul id="activity-log" class="activity-log" aria-live="polite"></ul>
+    </div>
+
+    <!-- Supported commands -->
+    <div class="command-grid-section glass-inner">
+      <div class="cg-title">Supported Commands</div>
+      <div class="command-grid">
+        <span class="cmd-chip nav">⬅ left</span>
+        <span class="cmd-chip nav">➡ right</span>
+        <span class="cmd-chip nav">⬆ up</span>
+        <span class="cmd-chip nav">⬇ down</span>
+      </div>
+    </div>
+
+    <!-- Processing pipeline -->
+    <div class="pipeline-section glass-inner">
+      <div class="pipe-title">Processing Pipeline</div>
+      <ol class="pipe-steps">
+        <li><span class="pipe-num">1</span>Mic captures speech</li>
+        <li><span class="pipe-num">2</span>Pre-emphasis & framing</li>
+        <li><span class="pipe-num">3</span>Mel filterbank → 40 MFCCs</li>
+        <li><span class="pipe-num">4</span>CNN feature extractor</li>
+        <li><span class="pipe-num">5</span>Softmax probabilities</li>
+        <li><span class="pipe-num">6</span>Instant maze move</li>
+      </ol>
+    </div>
+
+  </aside>
 
 </main>
 

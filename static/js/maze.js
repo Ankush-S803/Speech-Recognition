@@ -16,11 +16,11 @@
 const COMMANDS      = ["left", "right", "up", "down"];
 const MAX_LOG_ITEMS = 20;   // activity log ceiling
 
-// Dynamic cell size to keep maze compact
+// Dynamic cell size to keep maze nicely sized in the middle (~310-330px)
 function getCellSize(rows) {
-  if (rows <= 7) return 28;
-  if (rows <= 9) return 24;
-  return 20;
+  if (rows <= 7) return 44;
+  if (rows <= 9) return 36;
+  return 30;
 }
 
 // Colour palette (matches CSS)

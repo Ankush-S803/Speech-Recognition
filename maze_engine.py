@@ -9,6 +9,9 @@ import random
 from typing import List, Tuple, Dict, Any
 
 
+from collections import deque
+
+
 class MazeEngine:
     """
     Randomised maze with a mouse and an exit cell.
@@ -25,7 +28,7 @@ class MazeEngine:
         "right": ( 0,  1),
     }
 
-    def __init__(self, rows: int = 11, cols: int = 11):
+    def __init__(self, rows: int = 9, cols: int = 9):
         self.rows = rows
         self.cols = cols
         self.generate(rows, cols)
@@ -58,12 +61,41 @@ class MazeEngine:
         self.mouse: Tuple[int, int] = (1, 1)
         self.grid[1][1] = 0
 
-        # Exit: bottom-right open cell
-        self.exit: Tuple[int, int] = (self.rows - 2, self.cols - 2)
-        self.grid[self.rows - 2][self.cols - 2] = 0
+        # Exit: choose cell reachable in approx 6-8 steps
+        self.exit = self._find_target_exit(target_steps=7)
+        self.grid[self.exit[0]][self.exit[1]] = 0
 
         self.won: bool  = False
         self.steps: int = 0
+
+    def _find_target_exit(self, target_steps: int = 7) -> Tuple[int, int]:
+        """Find an open cell reachable in approximately 6 to 8 steps from start (1, 1)."""
+        queue = deque([(1, 1, 0)])
+        visited = {(1, 1)}
+        candidates = []
+
+        while queue:
+            r, c, d = queue.popleft()
+            if d >= 4:
+                candidates.append((d, (r, c)))
+            for dr, dc in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
+                nr, nc = r + dr, c + dc
+                if 0 <= nr < self.rows and 0 <= nc < self.cols and self.grid[nr][nc] == 0:
+                    if (nr, nc) not in visited:
+                        visited.add((nr, nc))
+                        queue.append((nr, nc, d + 1))
+
+        # Filter candidates between 6 and 8 steps
+        ideal = [pos for dist, pos in candidates if 6 <= dist <= 8]
+        if ideal:
+            return random.choice(ideal)
+
+        # Fallback to candidate closest to 7 steps
+        if candidates:
+            candidates.sort(key=lambda x: abs(x[0] - 7))
+            return candidates[0][1]
+
+        return (self.rows - 2, self.cols - 2)
 
     def _dfs(self, r: int, c: int):
         """Recursive backtracking carver."""
