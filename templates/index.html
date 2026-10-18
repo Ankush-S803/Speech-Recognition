@@ -58,6 +58,13 @@
         <span id="status-dot" class="status-dot idle"></span>
         <span id="status-text">Ready — click Speak Command</span>
       </div>
+
+      <!-- Fast Continuous Listening Mode Toggle -->
+      <label class="continuous-toggle" title="Keep mic listening continuously for ultra-fast repeated voice moves">
+        <input type="checkbox" id="chk-continuous" />
+        <span class="toggle-slider"></span>
+        <span class="toggle-label">⚡ Continuous Voice Mode</span>
+      </label>
     </div>
 
     <!-- Last recognised command -->
@@ -124,14 +131,24 @@
           <span id="step-count">0</span> steps
         </div>
       </div>
-      <button id="btn-new-maze" class="btn-new-maze" aria-label="Generate new maze">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
-          <polyline points="23 4 23 10 17 10"/>
-          <polyline points="1 20 1 14 7 14"/>
-          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
-        </svg>
-        New Maze
-      </button>
+      <div class="maze-actions">
+        <div class="size-selector-wrap">
+          <label for="select-maze-size" class="size-lbl">Grid:</label>
+          <select id="select-maze-size" class="maze-size-select" aria-label="Select maze size">
+            <option value="7">Small (7×7)</option>
+            <option value="9" selected>Medium (9×9)</option>
+            <option value="11">Large (11×11)</option>
+          </select>
+        </div>
+        <button id="btn-new-maze" class="btn-new-maze" aria-label="Generate new maze">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+            <polyline points="23 4 23 10 17 10"/>
+            <polyline points="1 20 1 14 7 14"/>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+          </svg>
+          New Maze
+        </button>
+      </div>
     </div>
 
     <!-- Maze canvas -->

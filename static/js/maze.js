@@ -13,9 +13,15 @@
 "use strict";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
-const CELL_SIZE     = 28;   // pixels per cell on canvas
 const COMMANDS      = ["left", "right", "up", "down"];
 const MAX_LOG_ITEMS = 20;   // activity log ceiling
+
+// Dynamic cell size to keep maze compact
+function getCellSize(rows) {
+  if (rows <= 7) return 28;
+  if (rows <= 9) return 24;
+  return 20;
+}
 
 // Colour palette (matches CSS)
 const COLOURS = {
@@ -29,27 +35,31 @@ const COLOURS = {
 };
 
 // ─── DOM references ───────────────────────────────────────────────────────────
-const canvas        = document.getElementById("maze-canvas");
-const ctx           = canvas.getContext("2d");
-const btnRecord     = document.getElementById("btn-record");
-const btnRecordLbl  = document.getElementById("btn-record-label");
-const btnNewMaze    = document.getElementById("btn-new-maze");
-const btnWinNew     = document.getElementById("btn-win-new");
-const statusDot     = document.getElementById("status-dot");
-const statusText    = document.getElementById("status-text");
-const cmdWord       = document.getElementById("cmd-word");
-const cmdConf       = document.getElementById("cmd-conf");
-const demoBadge     = document.getElementById("demo-badge");
-const stepCount     = document.getElementById("step-count");
-const winOverlay    = document.getElementById("win-overlay");
-const winSteps      = document.getElementById("win-steps");
-const activityLog   = document.getElementById("activity-log");
+const canvas         = document.getElementById("maze-canvas");
+const ctx            = canvas.getContext("2d");
+const btnRecord      = document.getElementById("btn-record");
+const btnRecordLbl   = document.getElementById("btn-record-label");
+const btnNewMaze     = document.getElementById("btn-new-maze");
+const btnWinNew      = document.getElementById("btn-win-new");
+const selectMazeSize = document.getElementById("select-maze-size");
+const chkContinuous  = document.getElementById("chk-continuous");
+const statusDot      = document.getElementById("status-dot");
+const statusText     = document.getElementById("status-text");
+const cmdWord        = document.getElementById("cmd-word");
+const cmdConf        = document.getElementById("cmd-conf");
+const demoBadge      = document.getElementById("demo-badge");
+const stepCount      = document.getElementById("step-count");
+const winOverlay     = document.getElementById("win-overlay");
+const winSteps       = document.getElementById("win-steps");
+const activityLog    = document.getElementById("activity-log");
 
 // ─── State ────────────────────────────────────────────────────────────────────
-let mazeState    = null;
-let isRecording  = false;
-let mediaRecorder = null;
-let audioChunks  = [];
+let mazeState        = null;
+let isRecording      = false;
+let isCommandExecuting = false;
+let continuousMode   = false;
+let mediaRecorder    = null;
+let audioChunks      = [];
 
 // ─── Maze rendering ───────────────────────────────────────────────────────────
 function renderMaze(state) {
@@ -57,8 +67,9 @@ function renderMaze(state) {
   mazeState = state;
 
   const { grid, rows, cols, mouse, exit: exitCell, won, steps } = state;
-  const w = cols * CELL_SIZE;
-  const h = rows * CELL_SIZE;
+  const cellSize = getCellSize(rows);
+  const w = cols * cellSize;
+  const h = rows * cellSize;
 
   canvas.width  = w;
   canvas.height = h;
@@ -67,58 +78,58 @@ function renderMaze(state) {
   // ── Draw cells ──────────────────────────────────────────────────────────
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
-      const x = c * CELL_SIZE;
-      const y = r * CELL_SIZE;
+      const x = c * cellSize;
+      const y = r * cellSize;
       const isWall  = grid[r][c] === 1;
       const isExit  = r === exitCell[0] && c === exitCell[1];
       const isMouse = r === mouse[0]    && c === mouse[1];
 
       if (isWall) {
         // Wall: dark slate with subtle gradient
-        const grad = ctx.createLinearGradient(x, y, x + CELL_SIZE, y + CELL_SIZE);
+        const grad = ctx.createLinearGradient(x, y, x + cellSize, y + cellSize);
         grad.addColorStop(0, "#1a2036");
         grad.addColorStop(1, "#111827");
         ctx.fillStyle = grad;
-        ctx.fillRect(x, y, CELL_SIZE, CELL_SIZE);
+        ctx.fillRect(x, y, cellSize, cellSize);
 
         // Inner edge highlight
         ctx.strokeStyle = "rgba(255,255,255,0.04)";
         ctx.lineWidth   = 0.5;
-        ctx.strokeRect(x + 0.5, y + 0.5, CELL_SIZE - 1, CELL_SIZE - 1);
+        ctx.strokeRect(x + 0.5, y + 0.5, cellSize - 1, cellSize - 1);
       } else {
         // Open path
         ctx.fillStyle = COLOURS.path;
-        ctx.fillRect(x, y, CELL_SIZE, CELL_SIZE);
+        ctx.fillRect(x, y, cellSize, cellSize);
 
         // Subtle grid line
         ctx.strokeStyle = COLOURS.grid;
         ctx.lineWidth   = 0.5;
-        ctx.strokeRect(x, y, CELL_SIZE, CELL_SIZE);
+        ctx.strokeRect(x, y, cellSize, cellSize);
       }
 
       // Exit cell
       if (isExit && !isMouse) {
         ctx.fillStyle = COLOURS.exitBg;
-        ctx.fillRect(x, y, CELL_SIZE, CELL_SIZE);
+        ctx.fillRect(x, y, cellSize, cellSize);
 
         // Door emoji
-        ctx.font      = `${CELL_SIZE * 0.65}px sans-serif`;
+        ctx.font      = `${cellSize * 0.65}px sans-serif`;
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        ctx.fillText("🚪", x + CELL_SIZE / 2, y + CELL_SIZE / 2);
+        ctx.fillText("🚪", x + cellSize / 2, y + cellSize / 2);
       }
     }
   }
 
   // ── Draw mouse ───────────────────────────────────────────────────────────
   const [mr, mc] = mouse;
-  const mx = mc * CELL_SIZE + CELL_SIZE / 2;
-  const my = mr * CELL_SIZE + CELL_SIZE / 2;
-  const r  = CELL_SIZE * 0.36;
+  const mx = mc * cellSize + cellSize / 2;
+  const my = mr * cellSize + cellSize / 2;
+  const r  = cellSize * 0.36;
 
   // Glow
   ctx.shadowColor = COLOURS.mouseShadow;
-  ctx.shadowBlur  = 14;
+  ctx.shadowBlur  = 12;
 
   ctx.beginPath();
   ctx.arc(mx, my, r, 0, Math.PI * 2);
@@ -131,7 +142,7 @@ function renderMaze(state) {
   ctx.shadowBlur = 0;
 
   // Mouse face emoji
-  ctx.font         = `${CELL_SIZE * 0.6}px sans-serif`;
+  ctx.font         = `${cellSize * 0.6}px sans-serif`;
   ctx.textAlign    = "center";
   ctx.textBaseline = "middle";
   ctx.fillText("🐭", mx, my);
@@ -167,12 +178,15 @@ async function fetchMazeState() {
 async function newMaze() {
   try {
     btnNewMaze.disabled = true;
-    const res  = await fetch("/maze/new", { method: "POST",
+    const size = selectMazeSize ? parseInt(selectMazeSize.value, 10) : 9;
+    const res  = await fetch("/maze/new", {
+      method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ rows: 11, cols: 11 }) });
+      body: JSON.stringify({ rows: size, cols: size })
+    });
     const data = await res.json();
     renderMaze(data.maze);
-    logActivity("New maze generated", "");
+    logActivity(`New ${size}×${size} maze generated`, "");
   } catch (e) {
     logActivity("Failed to generate maze", "error");
   } finally {
@@ -267,75 +281,84 @@ function startListening() {
   // ── Modern Web Speech API (Chrome, Edge, Safari, Opera) ─────────────────
   if (SpeechRecognition) {
     try {
-      if (!recognitionInstance) {
-        recognitionInstance = new SpeechRecognition();
-        recognitionInstance.lang = "en-US";
-        recognitionInstance.continuous = false;
-        recognitionInstance.interimResults = false;
-        recognitionInstance.maxAlternatives = 3;
+      continuousMode = chkContinuous ? chkContinuous.checked : false;
 
-        recognitionInstance.onstart = () => {
-          isRecording = true;
-          btnRecord.classList.add("recording");
-          btnRecordLbl.textContent = "Listening…";
-          setStatus("recording", "Listening… speak right, left, up, or down");
-          logActivity("Listening for voice command…", "");
-        };
-
-        recognitionInstance.onresult = (event) => {
-          let matched = null;
-          let bestConf = 0.95;
-
-          // Check all alternatives
-          for (let i = 0; i < event.results.length; i++) {
-            for (let j = 0; j < event.results[i].length; j++) {
-              const alt = event.results[i][j];
-              const m = normalizeCommand(alt.transcript);
-              if (m) {
-                matched = m;
-                if (alt.confidence && alt.confidence > 0) {
-                  bestConf = Math.max(bestConf, alt.confidence);
-                }
-                break;
-              }
-            }
-            if (matched) break;
-          }
-
-          if (matched) {
-            handleRecognisedCommand(matched, bestConf);
-            logActivity(`Heard: "${matched}" (${(bestConf * 100).toFixed(0)}%)`, "cmd");
-            setStatus("success", `Command: "${matched}"`);
-          } else {
-            const raw = event.results[0][0].transcript;
-            logActivity(`Unrecognised word: "${raw}"`, "error");
-            setStatus("error", `Heard "${raw}". Say: right, left, up, or down`);
-          }
-        };
-
-        recognitionInstance.onerror = (event) => {
-          console.warn("Speech recognition error:", event.error);
-          if (event.error === "no-speech") {
-            setStatus("idle", "No speech detected — click Speak Command to retry");
-            logActivity("No speech detected", "error");
-          } else {
-            setStatus("error", `Mic error: ${event.error}`);
-            logActivity(`Speech error: ${event.error}`, "error");
-          }
-        };
-
-        recognitionInstance.onend = () => {
-          isRecording = false;
-          btnRecord.classList.remove("recording");
-          btnRecord.classList.remove("processing");
-          btnRecordLbl.textContent = "Speak Command";
-          setTimeout(() => {
-            if (!isRecording) {
-              setStatus("idle", "Ready — click Speak Command or press Space");
-            }
-          }, 2200);
-        };
+      // Always create a fresh instance for instantaneous start
+      if (recognitionInstance) {
+        try { recognitionInstance.abort(); } catch (_) {}
       }
+
+      recognitionInstance = new SpeechRecognition();
+      recognitionInstance.lang = "en-US";
+      recognitionInstance.continuous = continuousMode;
+      recognitionInstance.interimResults = true; // INSTANT partial recognition!
+      recognitionInstance.maxAlternatives = 3;
+
+      recognitionInstance.onstart = () => {
+        isRecording = true;
+        btnRecord.classList.add("recording");
+        btnRecordLbl.textContent = continuousMode ? "Listening (Live)…" : "Listening…";
+        setStatus("recording", continuousMode ? "Live listening — speak commands freely" : "Listening… speak right, left, up, or down");
+        logActivity(continuousMode ? "Continuous voice mode active" : "Listening for command…", "");
+      };
+
+      recognitionInstance.onresult = (event) => {
+        if (isCommandExecuting) return; // Debounce so 1 spoken word doesn't double-fire
+
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const result = event.results[i];
+          for (let j = 0; j < result.length; j++) {
+            const alt = result[j];
+            const matched = normalizeCommand(alt.transcript);
+            if (matched) {
+              isCommandExecuting = true;
+              const conf = Math.max(0.92, alt.confidence || 0.96);
+
+              handleRecognisedCommand(matched, conf);
+              logActivity(`⚡ Heard: "${matched}"`, "cmd");
+              setStatus("success", `Command: "${matched}"`);
+
+              // If not in continuous mode, stop immediately to finish fast
+              if (!continuousMode) {
+                try { recognitionInstance.stop(); } catch (_) {}
+              }
+
+              // Re-arm after quick 250ms debounce
+              setTimeout(() => {
+                isCommandExecuting = false;
+              }, 280);
+              return;
+            }
+          }
+        }
+      };
+
+      recognitionInstance.onerror = (event) => {
+        if (event.error === "no-speech") {
+          if (!continuousMode) {
+            setStatus("idle", "No speech detected — click Speak Command to retry");
+          }
+        } else {
+          console.warn("Speech error:", event.error);
+          setStatus("error", `Mic: ${event.error}`);
+        }
+      };
+
+      recognitionInstance.onend = () => {
+        if (continuousMode && isRecording) {
+          try { recognitionInstance.start(); } catch (_) {}
+          return;
+        }
+        isRecording = false;
+        btnRecord.classList.remove("recording");
+        btnRecord.classList.remove("processing");
+        btnRecordLbl.textContent = "Speak Command";
+        setTimeout(() => {
+          if (!isRecording) {
+            setStatus("idle", "Ready — click Speak Command or press Space");
+          }
+        }, 1200);
+      };
 
       recognitionInstance.start();
       return;
@@ -384,9 +407,10 @@ async function startMediaRecorderFallback() {
     setStatus("recording", "Recording audio… speak now");
     logActivity("Recording started", "");
 
+    // Quick auto-stop after 800 ms (fast word recording)
     setTimeout(() => {
       if (isRecording) stopMediaRecorder();
-    }, 1500);
+    }, 800);
 
   } catch (err) {
     logActivity("Microphone access denied", "error");
@@ -494,6 +518,25 @@ btnRecord.addEventListener("click", () => {
 
 btnNewMaze.addEventListener("click", newMaze);
 btnWinNew.addEventListener("click", newMaze);
+
+if (selectMazeSize) {
+  selectMazeSize.addEventListener("change", () => {
+    newMaze();
+  });
+}
+
+if (chkContinuous) {
+  chkContinuous.addEventListener("change", (e) => {
+    continuousMode = e.target.checked;
+    if (continuousMode) {
+      logActivity("⚡ Continuous voice mode enabled", "success");
+      if (!isRecording) startListening();
+    } else {
+      logActivity("Standard single-command mode", "");
+      if (isRecording) stopListening();
+    }
+  });
+}
 
 document.querySelectorAll(".kb-btn").forEach((btn) => {
   btn.addEventListener("click", () => {

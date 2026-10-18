@@ -27,7 +27,7 @@ app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
 
 # ── Singleton instances (initialised once at startup) ─────────────────────────
 classifier = SpeechCommandClassifier()
-maze       = MazeEngine(rows=11, cols=11)
+maze       = MazeEngine(rows=9, cols=9)
 
 logger.info("Flask app ready.")
 
@@ -97,8 +97,8 @@ def maze_move():
 def maze_new():
     """Generate a completely new randomised maze."""
     data = request.get_json(silent=True) or {}
-    rows = int(data.get("rows", 11))
-    cols = int(data.get("cols", 11))
+    rows = int(data.get("rows", 9))
+    cols = int(data.get("cols", 9))
     maze.generate(rows, cols)
     return jsonify({"maze": maze.state()})
 
