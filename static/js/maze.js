@@ -219,7 +219,14 @@ async function sendMove(direction) {
 
 // ─── Speech recognition & audio handling ──────────────────────────────────────
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-let recognitionInstance = null;
+
+let recognitionInstance   = null;
+let isContinuousRunning   = false;
+let isSingleListening     = false;
+let singleTimeout         = null;
+let continuousRestartTimer= null;
+let lastExecutedCommand   = "";
+let lastExecutedTime      = 0;
 
 function setStatus(type, text) {
   statusDot.className = `status-dot ${type}`;
@@ -228,26 +235,36 @@ function setStatus(type, text) {
 
 /**
  * Match a raw spoken transcript to one of the 4 valid maze commands.
- * Handles homophones, accents, and casual phrasing (e.g. "go right", "write").
+ * Handles homophones, accents, casual phrasing, and compound sentences.
  */
 function normalizeCommand(rawText) {
   if (!rawText) return null;
-  const clean = rawText.toLowerCase().replace(/[^a-z\s]/g, " ").trim();
+  const clean = rawText.toLowerCase().replace(/[^a-z0-9\s]/g, " ").trim();
+  if (!clean) return null;
+
   const tokens = clean.split(/\s+/);
 
-  // Direct token match (highest priority)
+  // Exact word tokens
   for (const t of tokens) {
-    if (t === "right" || t === "write" || t === "rite" || t === "ride") return "right";
-    if (t === "left"  || t === "lift"  || t === "let")                  return "left";
-    if (t === "up"    || t === "app"   || t === "upper" || t === "hop") return "up";
-    if (t === "down"  || t === "done"  || t === "town"  || t === "dawn") return "down";
+    if (["right", "write", "rite", "ride", "light", "bright", "wright", "alright", "white", "rate"].includes(t)) {
+      return "right";
+    }
+    if (["left", "lift", "let", "leaf", "laughed", "last", "west", "loft"].includes(t)) {
+      return "left";
+    }
+    if (["up", "app", "upper", "top", "hop", "cup", "north", "straight", "forward", "ahead"].includes(t)) {
+      return "up";
+    }
+    if (["down", "done", "dawn", "town", "brown", "don", "bottom", "south", "dan"].includes(t)) {
+      return "down";
+    }
   }
 
-  // Substring search
-  if (clean.includes("right")) return "right";
-  if (clean.includes("left"))  return "left";
-  if (clean.includes("up"))    return "up";
-  if (clean.includes("down"))  return "down";
+  // Regex boundary match across phrase
+  if (/\b(right|write|rite|ride|light|bright|white)\b/.test(clean)) return "right";
+  if (/\b(left|lift|let|leaf|laughed)\b/.test(clean))              return "left";
+  if (/\b(up|upper|top|hop|forward|straight|ahead|north)\b/.test(clean)) return "up";
+  if (/\b(down|done|dawn|town|bottom|south)\b/.test(clean))        return "down";
 
   return null;
 }
@@ -275,115 +292,266 @@ function handleRecognisedCommand(cmd, confidence = 0.96) {
   sendMove(cmd);
 }
 
-function startListening() {
-  if (isRecording) return;
+// ─── CONTINUOUS VOICE MODE ────────────────────────────────────────────────────
+function startContinuousMode() {
+  stopSingleListening(false);
+  isContinuousRunning = true;
+  btnRecord.classList.add("recording");
+  btnRecord.classList.remove("processing");
+  btnRecordLbl.textContent = "Listening (Live)…";
+  setStatus("recording", "Live listening — speak commands freely (up, down, left, right)");
+  logActivity("⚡ Continuous voice mode started", "success");
 
-  // ── Modern Web Speech API (Chrome, Edge, Safari, Opera) ─────────────────
-  if (SpeechRecognition) {
-    try {
-      continuousMode = chkContinuous ? chkContinuous.checked : false;
+  setupContinuousRecognition();
+}
 
-      // Always create a fresh instance for instantaneous start
-      if (recognitionInstance) {
-        try { recognitionInstance.abort(); } catch (_) {}
+function stopContinuousMode() {
+  isContinuousRunning = false;
+  clearTimeout(continuousRestartTimer);
+
+  if (recognitionInstance) {
+    try { recognitionInstance.abort(); } catch (_) {}
+    recognitionInstance = null;
+  }
+
+  btnRecord.classList.remove("recording");
+  btnRecord.classList.remove("processing");
+  btnRecordLbl.textContent = "Speak Command";
+  setStatus("idle", "Ready — click Speak Command or toggle Continuous");
+  logActivity("Continuous voice mode paused", "");
+}
+
+function setupContinuousRecognition() {
+  if (!isContinuousRunning) return;
+
+  if (recognitionInstance) {
+    try { recognitionInstance.abort(); } catch (_) {}
+    recognitionInstance = null;
+  }
+
+  if (!SpeechRecognition) {
+    startMediaRecorderFallback(true);
+    return;
+  }
+
+  try {
+    recognitionInstance = new SpeechRecognition();
+    recognitionInstance.lang = "en-US";
+    recognitionInstance.continuous = true;
+    recognitionInstance.interimResults = true;
+    recognitionInstance.maxAlternatives = 5;
+
+    recognitionInstance.onstart = () => {
+      if (isContinuousRunning) {
+        setStatus("recording", "Live listening — speak commands freely");
       }
+    };
 
-      recognitionInstance = new SpeechRecognition();
-      recognitionInstance.lang = "en-US";
-      recognitionInstance.continuous = continuousMode;
-      recognitionInstance.interimResults = true; // INSTANT partial recognition!
-      recognitionInstance.maxAlternatives = 3;
+    recognitionInstance.onresult = (event) => {
+      if (!isContinuousRunning) return;
 
-      recognitionInstance.onstart = () => {
-        isRecording = true;
-        btnRecord.classList.add("recording");
-        btnRecordLbl.textContent = continuousMode ? "Listening (Live)…" : "Listening…";
-        setStatus("recording", continuousMode ? "Live listening — speak commands freely" : "Listening… speak right, left, up, or down");
-        logActivity(continuousMode ? "Continuous voice mode active" : "Listening for command…", "");
-      };
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const res = event.results[i];
+        let transcript = "";
+        let matched = null;
 
-      recognitionInstance.onresult = (event) => {
-        if (isCommandExecuting) return; // Debounce so 1 spoken word doesn't double-fire
-
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          const result = event.results[i];
-          for (let j = 0; j < result.length; j++) {
-            const alt = result[j];
-            const matched = normalizeCommand(alt.transcript);
-            if (matched) {
-              isCommandExecuting = true;
-              const conf = Math.max(0.92, alt.confidence || 0.96);
-
-              handleRecognisedCommand(matched, conf);
-              logActivity(`⚡ Heard: "${matched}"`, "cmd");
-              setStatus("success", `Command: "${matched}"`);
-
-              // If not in continuous mode, stop immediately to finish fast
-              if (!continuousMode) {
-                try { recognitionInstance.stop(); } catch (_) {}
-              }
-
-              // Re-arm after quick 250ms debounce
-              setTimeout(() => {
-                isCommandExecuting = false;
-              }, 280);
-              return;
-            }
-          }
+        for (let j = 0; j < res.length; j++) {
+          transcript = res[j].transcript;
+          matched = normalizeCommand(transcript);
+          if (matched) break;
         }
-      };
 
-      recognitionInstance.onerror = (event) => {
-        if (event.error === "no-speech") {
-          if (!continuousMode) {
-            setStatus("idle", "No speech detected — click Speak Command to retry");
+        if (matched) {
+          const now = Date.now();
+          // Debounce: prevent same command firing repeatedly within 350ms
+          if (matched === lastExecutedCommand && (now - lastExecutedTime) < 350) {
+            return;
           }
-        } else {
-          console.warn("Speech error:", event.error);
-          setStatus("error", `Mic: ${event.error}`);
-        }
-      };
+          lastExecutedCommand = matched;
+          lastExecutedTime    = now;
 
-      recognitionInstance.onend = () => {
-        if (continuousMode && isRecording) {
-          try { recognitionInstance.start(); } catch (_) {}
+          const conf = Math.max(0.92, (res[0] && res[0].confidence) || 0.96);
+          handleRecognisedCommand(matched, conf);
+          logActivity(`⚡ Heard: "${matched}"`, "cmd");
+          setStatus("success", `Executed: ${matched.toUpperCase()}`);
           return;
+        } else if (res.isFinal && transcript.trim()) {
+          // Show unrecognized speech feedback
+          setStatus("recording", `Heard: "${transcript.trim()}" — say up, down, left, right`);
+          logActivity(`Unrecognized: "${transcript.trim()}"`, "");
         }
-        isRecording = false;
-        btnRecord.classList.remove("recording");
-        btnRecord.classList.remove("processing");
-        btnRecordLbl.textContent = "Speak Command";
-        setTimeout(() => {
-          if (!isRecording) {
-            setStatus("idle", "Ready — click Speak Command or press Space");
-          }
-        }, 1200);
-      };
+      }
+    };
 
-      recognitionInstance.start();
-      return;
-    } catch (e) {
-      console.warn("SpeechRecognition start error, falling back to MediaRecorder:", e);
+    recognitionInstance.onerror = (event) => {
+      if (event.error === "no-speech" || event.error === "aborted") {
+        // Normal in continuous mode; do not disrupt
+        return;
+      }
+      console.warn("Continuous recognition error:", event.error);
+    };
+
+    recognitionInstance.onend = () => {
+      // Re-instantiate freshly after a brief cooldown so the audio track clears cleanly
+      if (isContinuousRunning) {
+        clearTimeout(continuousRestartTimer);
+        continuousRestartTimer = setTimeout(() => {
+          if (isContinuousRunning) setupContinuousRecognition();
+        }, 180);
+      }
+    };
+
+    recognitionInstance.start();
+  } catch (err) {
+    console.warn("Failed to start continuous recognition, retrying in 400ms:", err);
+    if (isContinuousRunning) {
+      clearTimeout(continuousRestartTimer);
+      continuousRestartTimer = setTimeout(setupContinuousRecognition, 400);
     }
   }
-
-  // ── Fallback: MediaRecorder + Backend /predict ──────────────────────────
-  startMediaRecorderFallback();
 }
 
-function stopListening() {
-  if (recognitionInstance && isRecording) {
+// ─── SINGLE COMMAND MODE (5-second comfortable listening budget) ──────────────
+function startSingleListening() {
+  if (isContinuousRunning) {
+    // If continuous mode is on, a click toggles continuous mode off
+    if (chkContinuous) chkContinuous.checked = false;
+    stopContinuousMode();
+    return;
+  }
+
+  if (isSingleListening) {
+    stopSingleListening(false);
+    return;
+  }
+
+  isSingleListening = true;
+  btnRecord.classList.add("recording");
+  btnRecord.classList.remove("processing");
+  btnRecordLbl.textContent = "Listening…";
+  setStatus("recording", "Listening… speak right, left, up, or down (5s)");
+  logActivity("Listening for command (5s)…", "");
+
+  // Give the user a full 5.0 seconds to speak
+  clearTimeout(singleTimeout);
+  singleTimeout = setTimeout(() => {
+    if (isSingleListening) {
+      stopSingleListening(true);
+    }
+  }, 5000);
+
+  if (SpeechRecognition) {
+    runSingleSpeechRecognition();
+  } else {
+    startMediaRecorderFallback(false);
+  }
+}
+
+function runSingleSpeechRecognition() {
+  if (!isSingleListening) return;
+
+  if (recognitionInstance) {
+    try { recognitionInstance.abort(); } catch (_) {}
+    recognitionInstance = null;
+  }
+
+  try {
+    recognitionInstance = new SpeechRecognition();
+    recognitionInstance.lang = "en-US";
+    recognitionInstance.continuous = false;
+    recognitionInstance.interimResults = true;
+    recognitionInstance.maxAlternatives = 5;
+
+    recognitionInstance.onresult = (event) => {
+      if (!isSingleListening) return;
+
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const res = event.results[i];
+        let matched = null;
+        for (let j = 0; j < res.length; j++) {
+          matched = normalizeCommand(res[j].transcript);
+          if (matched) break;
+        }
+
+        if (matched) {
+          clearTimeout(singleTimeout);
+          isSingleListening = false;
+
+          const conf = Math.max(0.92, (res[0] && res[0].confidence) || 0.96);
+          handleRecognisedCommand(matched, conf);
+          logActivity(`⚡ Heard: "${matched}"`, "cmd");
+          setStatus("success", `Command: "${matched.toUpperCase()}"`);
+
+          try { recognitionInstance.stop(); } catch (_) {}
+
+          btnRecord.classList.remove("recording");
+          btnRecordLbl.textContent = "Speak Command";
+          setTimeout(() => {
+            if (!isSingleListening && !isContinuousRunning) {
+              setStatus("idle", "Ready — click Speak Command or press Space");
+            }
+          }, 1500);
+          return;
+        }
+      }
+    };
+
+    recognitionInstance.onerror = (event) => {
+      if (event.error === "no-speech") {
+        // If the user was momentarily quiet but our 5s budget is still active, restart!
+        if (isSingleListening) {
+          setTimeout(() => {
+            if (isSingleListening) runSingleSpeechRecognition();
+          }, 150);
+        }
+        return;
+      }
+      console.warn("Single recognition error:", event.error);
+    };
+
+    recognitionInstance.onend = () => {
+      // If ended before our 5s budget expired and no command was matched, keep listening
+      if (isSingleListening) {
+        setTimeout(() => {
+          if (isSingleListening) runSingleSpeechRecognition();
+        }, 150);
+      }
+    };
+
+    recognitionInstance.start();
+  } catch (err) {
+    console.warn("SpeechRecognition start error:", err);
+    startMediaRecorderFallback(false);
+  }
+}
+
+function stopSingleListening(isTimeout = false) {
+  clearTimeout(singleTimeout);
+  isSingleListening = false;
+
+  if (recognitionInstance) {
     try { recognitionInstance.stop(); } catch (_) {}
+    recognitionInstance = null;
   }
-  if (mediaRecorder && isRecording) {
-    stopMediaRecorder();
+
+  if (mediaRecorder && mediaRecorder.state !== "inactive") {
+    try { mediaRecorder.stop(); } catch (_) {}
   }
-  isRecording = false;
+
   btnRecord.classList.remove("recording");
+  btnRecord.classList.remove("processing");
   btnRecordLbl.textContent = "Speak Command";
+
+  if (isTimeout) {
+    setStatus("idle", "Timed out — click Speak Command to try again");
+    logActivity("Listening timed out (no command detected)", "error");
+  } else {
+    setStatus("idle", "Ready — click Speak Command or press Space");
+  }
 }
 
-async function startMediaRecorderFallback() {
+// ─── MEDIA RECORDER FALLBACK (2.5s window) ───────────────────────────────────
+async function startMediaRecorderFallback(isContinuous = false) {
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     mediaRecorder = new MediaRecorder(stream);
@@ -397,36 +565,34 @@ async function startMediaRecorderFallback() {
       const audioBlob = new Blob(audioChunks, { type: "audio/wav" });
       stream.getTracks().forEach(t => t.stop());
       await sendAudioToServer(audioBlob);
+
+      if (isContinuous && isContinuousRunning) {
+        setTimeout(() => startMediaRecorderFallback(true), 300);
+      }
     };
 
     mediaRecorder.start();
-    isRecording = true;
-
     btnRecord.classList.add("recording");
     btnRecordLbl.textContent = "Listening…";
-    setStatus("recording", "Recording audio… speak now");
-    logActivity("Recording started", "");
+    setStatus("recording", "Recording audio (2.5s)… speak clearly");
+    logActivity("Recording audio (2.5s)…", "");
 
-    // Quick auto-stop after 800 ms (fast word recording)
+    // 2.5 seconds allows comfortable speaking time
     setTimeout(() => {
-      if (isRecording) stopMediaRecorder();
-    }, 800);
+      if (mediaRecorder && mediaRecorder.state === "recording") {
+        mediaRecorder.stop();
+        btnRecord.classList.remove("recording");
+        btnRecord.classList.add("processing");
+        btnRecordLbl.textContent = "Processing…";
+        setStatus("processing", "Processing with CNN model…");
+      }
+    }, 2500);
 
   } catch (err) {
     logActivity("Microphone access denied", "error");
     setStatus("error", "Mic permission denied");
     alert("Please allow microphone access to use voice commands.");
   }
-}
-
-function stopMediaRecorder() {
-  if (!isRecording || !mediaRecorder) return;
-  mediaRecorder.stop();
-  isRecording = false;
-  btnRecord.classList.remove("recording");
-  btnRecord.classList.add("processing");
-  btnRecordLbl.textContent = "Processing…";
-  setStatus("processing", "Processing audio…");
 }
 
 async function sendAudioToServer(blob) {
@@ -505,15 +671,27 @@ document.addEventListener("keydown", (e) => {
   }
   if (e.code === "Space") {
     e.preventDefault();
-    if (!isRecording) startListening();
-    else stopListening();
+    if (isContinuousRunning) {
+      if (chkContinuous) chkContinuous.checked = false;
+      stopContinuousMode();
+    } else if (isSingleListening) {
+      stopSingleListening(false);
+    } else {
+      startSingleListening();
+    }
   }
 });
 
 // ─── Event listeners ──────────────────────────────────────────────────────────
 btnRecord.addEventListener("click", () => {
-  if (isRecording) stopListening();
-  else startListening();
+  if (isContinuousRunning) {
+    if (chkContinuous) chkContinuous.checked = false;
+    stopContinuousMode();
+  } else if (isSingleListening) {
+    stopSingleListening(false);
+  } else {
+    startSingleListening();
+  }
 });
 
 btnNewMaze.addEventListener("click", newMaze);
@@ -527,13 +705,10 @@ if (selectMazeSize) {
 
 if (chkContinuous) {
   chkContinuous.addEventListener("change", (e) => {
-    continuousMode = e.target.checked;
-    if (continuousMode) {
-      logActivity("⚡ Continuous voice mode enabled", "success");
-      if (!isRecording) startListening();
+    if (e.target.checked) {
+      startContinuousMode();
     } else {
-      logActivity("Standard single-command mode", "");
-      if (isRecording) stopListening();
+      stopContinuousMode();
     }
   });
 }
