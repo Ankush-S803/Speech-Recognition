@@ -1,0 +1,17 @@
+# ─── Core ML / audio ─────────────────────────────────────────────────────────
+torch>=2.0.0
+torchaudio>=2.0.0
+numpy>=1.24.0
+librosa>=0.10.0
+
+# ─── Web backend ─────────────────────────────────────────────────────────────
+flask>=3.0.0
+
+# ─── Audio capture (optional — for server-side mic recording) ────────────────
+sounddevice>=0.4.6
+
+# ─── Utilities ───────────────────────────────────────────────────────────────
+scipy>=1.10.0
+scikit-learn>=1.3.0
+matplotlib>=3.7.0     # training curves
+tqdm>=4.65.0          # progress bars

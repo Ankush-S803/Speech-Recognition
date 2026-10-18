@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VoiceMaze — Speech-Controlled Maze Navigation</title>
+  <meta name="description" content="Navigate a randomised maze using voice commands powered by a PyTorch CNN speech recognition model." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+
+<!-- ─── Animated background ─── -->
+<div class="bg-orbs" aria-hidden="true">
+  <div class="orb orb-1"></div>
+  <div class="orb orb-2"></div>
+  <div class="orb orb-3"></div>
+</div>
+
+<!-- ─── Header ─── -->
+<header class="header">
+  <div class="header-inner">
+    <div class="logo">
+      <span class="logo-icon">🎙️</span>
+      <span class="logo-text">VoiceMaze</span>
+    </div>
+    <nav class="nav-pills">
+      <span class="pill pill-model">CNN Model</span>
+      <span class="pill pill-mfcc">MFCC Features</span>
+      <span class="pill pill-pt">PyTorch</span>
+    </nav>
+  </div>
+</header>
+
+<!-- ─── Main layout ─── -->
+<main class="layout">
+
+  <!-- ══════ LEFT PANEL — Controls ══════ -->
+  <aside class="panel panel-left glass" role="complementary" aria-label="Controls">
+
+    <section class="section-title">
+      <h2>🎮 Controls</h2>
+      <p class="subtitle">Speak a command below to move the mouse</p>
+    </section>
+
+    <!-- Recording button -->
+    <div class="record-wrap">
+      <button id="btn-record" class="btn-record" aria-label="Start Recording">
+        <span class="mic-ring" aria-hidden="true"></span>
+        <svg class="mic-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+          <line x1="12" y1="19" x2="12" y2="23"/>
+          <line x1="8" y1="23" x2="16" y2="23"/>
+        </svg>
+        <span id="btn-record-label">Start Recording</span>
+      </button>
+
+      <!-- Status indicator -->
+      <div id="status-bar" class="status-bar" role="status" aria-live="polite">
+        <span id="status-dot" class="status-dot idle"></span>
+        <span id="status-text">Ready — click to speak</span>
+      </div>
+    </div>
+
+    <!-- Last recognised command -->
+    <div class="command-display glass-inner">
+      <div class="cmd-label">Last command</div>
+      <div id="cmd-word" class="cmd-word">—</div>
+      <div id="cmd-conf" class="cmd-conf">Confidence: —</div>
+      <div id="demo-badge" class="demo-badge hidden">⚠ Demo mode (no trained model)</div>
+    </div>
+
+    <!-- Probability bars -->
+    <div class="prob-section">
+      <div class="prob-title">Command probabilities</div>
+      <div id="prob-bars" class="prob-bars">
+        <div class="prob-row" data-cmd="left">
+          <span class="prob-label">left</span>
+          <div class="prob-track"><div class="prob-fill" style="width:0%"></div></div>
+          <span class="prob-pct">0%</span>
+        </div>
+        <div class="prob-row" data-cmd="right">
+          <span class="prob-label">right</span>
+          <div class="prob-track"><div class="prob-fill" style="width:0%"></div></div>
+          <span class="prob-pct">0%</span>
+        </div>
+        <div class="prob-row" data-cmd="up">
+          <span class="prob-label">up</span>
+          <div class="prob-track"><div class="prob-fill" style="width:0%"></div></div>
+          <span class="prob-pct">0%</span>
+        </div>
+        <div class="prob-row" data-cmd="down">
+          <span class="prob-label">down</span>
+          <div class="prob-track"><div class="prob-fill" style="width:0%"></div></div>
+          <span class="prob-pct">0%</span>
+        </div>
+        <div class="prob-row" data-cmd="yes">
+          <span class="prob-label">yes</span>
+          <div class="prob-track"><div class="prob-fill" style="width:0%"></div></div>
+          <span class="prob-pct">0%</span>
+        </div>
+        <div class="prob-row" data-cmd="no">
+          <span class="prob-label">no</span>
+          <div class="prob-track"><div class="prob-fill" style="width:0%"></div></div>
+          <span class="prob-pct">0%</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Keyboard fallback -->
+    <div class="keyboard-section glass-inner">
+      <div class="kb-label">⌨ Keyboard fallback</div>
+      <div class="d-pad">
+        <button id="kb-up"    class="kb-btn"             aria-label="Move up"    data-dir="up">▲</button>
+        <button id="kb-left"  class="kb-btn kb-left"     aria-label="Move left"  data-dir="left">◀</button>
+        <button id="kb-down"  class="kb-btn kb-down"     aria-label="Move down"  data-dir="down">▼</button>
+        <button id="kb-right" class="kb-btn kb-right"    aria-label="Move right" data-dir="right">▶</button>
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- ══════ CENTER PANEL — Maze ══════ -->
+  <section class="panel panel-center" aria-label="Maze">
+    <div class="maze-header">
+      <div class="maze-title-row">
+        <h1 class="maze-title">🧩 Maze Navigation</h1>
+        <div class="step-counter">
+          <span class="step-icon">👣</span>
+          <span id="step-count">0</span> steps
+        </div>
+      </div>
+      <button id="btn-new-maze" class="btn-new-maze" aria-label="Generate new maze">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+          <polyline points="23 4 23 10 17 10"/>
+          <polyline points="1 20 1 14 7 14"/>
+          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+        </svg>
+        New Maze
+      </button>
+    </div>
+
+    <!-- Maze canvas -->
+    <div class="maze-container glass">
+      <canvas id="maze-canvas" role="img" aria-label="Maze grid with mouse and exit"></canvas>
+    </div>
+
+    <!-- Legend -->
+    <div class="legend">
+      <span class="legend-item"><span class="legend-dot mouse"></span> Mouse 🐭</span>
+      <span class="legend-item"><span class="legend-dot exit"></span> Exit 🚪</span>
+      <span class="legend-item"><span class="legend-dot wall"></span> Wall</span>
+      <span class="legend-item"><span class="legend-dot path"></span> Path</span>
+    </div>
+
+    <!-- Win overlay -->
+    <div id="win-overlay" class="win-overlay hidden" role="dialog" aria-modal="true" aria-label="You won!">
+      <div class="win-card glass">
+        <div class="win-emoji">🎉</div>
+        <h2 class="win-title">You escaped!</h2>
+        <p class="win-steps">Completed in <strong id="win-steps">0</strong> steps</p>
+        <button id="btn-win-new" class="btn-new-maze" style="margin-top:1rem">
+          Play Again 🔄
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════ RIGHT PANEL — Info ══════ -->
+  <aside class="panel panel-right glass" role="complementary" aria-label="Model information">
+
+    <section class="section-title">
+      <h2>🧠 Model Info</h2>
+    </section>
+
+    <div class="model-card glass-inner">
+      <div class="model-row">
+        <span class="model-key">Architecture</span>
+        <span class="model-val">CNN + MLP head</span>
+      </div>
+      <div class="model-row">
+        <span class="model-key">Features</span>
+        <span class="model-val">40 MFCCs</span>
+      </div>
+      <div class="model-row">
+        <span class="model-key">Sample Rate</span>
+        <span class="model-val">16 000 Hz</span>
+      </div>
+      <div class="model-row">
+        <span class="model-key">Classes</span>
+        <span class="model-val">6 commands</span>
+      </div>
+      <div class="model-row">
+        <span class="model-key">Loss</span>
+        <span class="model-val">Cross-Entropy</span>
+      </div>
+      <div class="model-row">
+        <span class="model-key">Optimiser</span>
+        <span class="model-val">Adam</span>
+      </div>
+    </div>
+
+    <div class="command-grid-section">
+      <div class="cg-title">Supported commands</div>
+      <div class="command-grid">
+        <span class="cmd-chip nav">⬅ left</span>
+        <span class="cmd-chip nav">➡ right</span>
+        <span class="cmd-chip nav">⬆ up</span>
+        <span class="cmd-chip nav">⬇ down</span>
+        <span class="cmd-chip confirm">✅ yes</span>
+        <span class="cmd-chip deny">❌ no</span>
+      </div>
+    </div>
+
+    <div class="pipeline-section">
+      <div class="pipe-title">Processing pipeline</div>
+      <ol class="pipe-steps">
+        <li><span class="pipe-num">1</span>Mic captures audio (1.5 s)</li>
+        <li><span class="pipe-num">2</span>Pre-emphasis + STFT</li>
+        <li><span class="pipe-num">3</span>Mel filterbank → log energy</li>
+        <li><span class="pipe-num">4</span>DCT → 40 MFCC coefficients</li>
+        <li><span class="pipe-num">5</span>CNN → 128-d feature vector</li>
+        <li><span class="pipe-num">6</span>Softmax → command label</li>
+      </ol>
+    </div>
+
+    <div class="log-section glass-inner">
+      <div class="log-title">Activity log</div>
+      <ul id="activity-log" class="activity-log" aria-live="polite"></ul>
+    </div>
+
+  </aside>
+
+</main>
+
+<!-- ─── Footer ─── -->
+<footer class="footer">
+  <span>Speech-Controlled Maze Navigation</span>
+  <span class="sep">·</span>
+  <span>Soft Computing Mini-Project</span>
+  <span class="sep">·</span>
+  <a href="https://github.com/Ankush-S803/Speech-Recognition" target="_blank" rel="noopener">GitHub</a>
+</footer>
+
+<script src="/static/js/maze.js"></script>
+</body>
+</html>
